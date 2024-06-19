@@ -1,0 +1,77 @@
+version: '3'
+
+services:
+  web_app:
+    restart: unless-stopped
+    command: uvicorn api:app --host 127.0.0.1 --port 8000 --port 8000 --proxy-headers --log-level debug --workers 1
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+    depends_on:
+      - db
+    ports:
+      - 80:8000
+    networks:
+        - service-network
+  db:
+      image: postgres:15-alpine
+      restart: unless-stopped
+      volumes:
+          - postgres_data:/var/lib/postgresql/data/
+      networks:
+        - service-network
+  celery_worker:
+    restart: unless-stopped
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    command:  celery -A celery_queue.celery_app worker --loglevel=info -Q default -E
+    depends_on:
+      - app
+      - redis
+    networks:
+      - service-network
+  celery_beat:
+    restart: unless-stopped
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    command: celery -A celery_queue.celery_app beat --loglevel=info
+    depends_on:
+      - rabbitmq
+    networks:
+      - service-network
+  flower:
+    image: mher/flower:0.9.7
+    command: celery -A celery_queue.celery_app flower
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+    networks:
+      - service-network
+  rabbitmq:
+    image: "rabbitmq:3-management"
+    hostname: "rabbitmq"
+    environment:
+      RABBITMQ_ERLANG_COOKIE: "SWQOKODSQALRPCLNMEQG"
+      RABBITMQ_DEFAULT_USER: "guest"
+      RABBITMQ_DEFAULT_PASS: "guest"
+      RABBITMQ_DEFAULT_VHOST: "/"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - "rabbitmq_data:/var/lib/rabbitmq"
+    networks:
+      - service-network
+
+
+volumes:
+    postgres_data:
+    rabbitmq_data:
+
+
+networks:
+    service-network:
+        driver: bridge
